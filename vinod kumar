@@ -1,0 +1,78 @@
+import csv
+import re
+from Bio import Entrez
+
+# Set your email (required for NCBI PubMed API access)
+Entrez.email = "your_email@example.com"
+
+# Keywords to identify pharmaceutical/biotech affiliations
+BIOTECH_KEYWORDS = [
+    "pharmaceutical", "biotech", "biosciences", "therapeutics",
+    "life sciences", "drug discovery", "biopharma", "biotechnology",
+    "pharma", "biomedicine"
+]
+
+
+def fetch_pubmed_papers(query, max_results=50):
+    """Fetch research papers from PubMed based on a user query."""
+    try:
+        handle = Entrez.esearch(db="pubmed", term=query, retmax=max_results)
+        record = Entrez.read(handle)
+        handle.close()
+        pmids = record["IdList"]
+
+        papers = []
+        for pmid in pmids:
+            details = Entrez.efetch(db="pubmed", id=pmid, retmode="xml")
+            record = Entrez.read(details)
+
+            if "PubmedArticle" in record:
+                article = record["PubmedArticle"][0]["MedlineCitation"]
+                title = article["Article"]["ArticleTitle"]
+                authors = article["Article"].get("AuthorList", [])
+                affiliations = []
+
+                for author in authors:
+                    if "AffiliationInfo" in author:
+                        for aff in author["AffiliationInfo"]:
+                            affiliations.append(aff["Affiliation"])
+
+                # Check if any affiliation matches biotech/pharma keywords
+                if any(re.search(r"\b" + kw + r"\b", aff, re.IGNORECASE) for kw in BIOTECH_KEYWORDS for aff in
+                       affiliations):
+                    papers.append({
+                        "PMID": pmid,
+                        "Title": title,
+                        "Affiliations": "; ".join(affiliations)
+                    })
+
+        return papers
+
+    except Exception as e:
+        print(f"Error fetching PubMed papers: {e}")
+        return []
+
+
+def save_to_csv(papers, filename="research_papers.csv"):
+    """Save the filtered research papers to a CSV file."""
+    with open(filename, mode="w", newline="", encoding="utf-8") as file:
+        writer = csv.DictWriter(file, fieldnames=["PMID", "Title", "Affiliations"])
+        writer.writeheader()
+        writer.writerows(papers)
+
+
+def main():
+    query = input("Enter search query: ")
+    max_results = int(input("Enter max number of results: "))
+
+    papers = fetch_pubmed_papers(query, max_results)
+
+    if papers:
+        save_to_csv(papers)
+        print(f"Saved {len(papers)} research papers to 'research_papers.csv'")
+    else:
+        print("No papers found with pharmaceutical or biotech affiliations.")
+
+
+if __name__ == "__main__":
+    main()
